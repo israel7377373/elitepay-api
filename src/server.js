@@ -196,7 +196,8 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+// CORREÇÃO: Atribuímos o resultado de app.listen() à variável 'server'
+const server = app.listen(PORT, () => {
   const serverUrl = process.env.APP_URL || `http://localhost:${PORT}`;
   const environment = process.env.NODE_ENV || 'development';
   
@@ -209,9 +210,9 @@ app.listen(PORT, () => {
   ║  Health: ${serverUrl}/health ${' '.repeat(Math.max(0, 16 - serverUrl.length))} ║
   ║                                       ║
   ║  📍 Endpoints:                        ║
-  ║    /api/auth/*                        ║
-  ║    /api/transactions/*                ║
-  ║    /api/credentials/*                 ║
+  ║    /api/auth/* ║
+  ║    /api/transactions/* ║
+  ║    /api/credentials/* ║
   ║    /webhook/mistic                    ║
   ║                                       ║
   ║  🌐 CORS permitido para:              ║
@@ -225,6 +226,7 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM recebido. Encerrando servidor...');
+  // Agora 'server.close' funciona corretamente
   server.close(() => {
     console.log('✅ Servidor encerrado gracefully');
     process.exit(0);
