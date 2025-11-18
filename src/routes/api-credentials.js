@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt'); // 👈 NOVO: Módulo de criptografia
 const { db } = require('../config/database');
 const { authenticateToken } = require('./auth');
 
@@ -17,7 +18,7 @@ try {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       client_id TEXT UNIQUE NOT NULL,
-      client_secret TEXT NOT NULL,
+      client_secret_hash TEXT NOT NULL, 👈 CORREÇÃO: Coluna renomeada para indicar hash
       criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
@@ -47,7 +48,7 @@ try {
 // ========================================
 // GERAR CREDENCIAIS DE API
 // ========================================
-router.post('/generate', (req, res) => {
+router.post('/generate', async (req, res) => { // 👈 Mudança para 'async'
   try {
     const userId = req.user.userId;
 
@@ -57,7 +58,7 @@ router.post('/generate', (req, res) => {
     let existing;
     try {
       existing = db.prepare(`
-        SELECT * FROM api_credentials WHERE user_id = ?
+        SELECT client_id FROM api_credentials WHERE user_id = ?
       `).get(userId);
     } catch (dbError) {
       console.error('❌ Erro ao verificar credenciais existentes:', dbError);
@@ -78,14 +79,17 @@ router.post('/generate', (req, res) => {
     const clientId = `ci_${crypto.randomBytes(16).toString('hex')}`;
     const clientSecret = `cs_${crypto.randomBytes(32).toString('hex')}`;
 
+    // 👈 NOVO: Criptografar o Client Secret antes de salvar
+    const clientSecretHash = await bcrypt.hash(clientSecret, 10); 
+
     console.log('✅ Credenciais geradas:', { clientId });
 
-    // Salvar no banco
+    // Salvar no banco (salva o HASH, não o Secret puro)
     try {
       db.prepare(`
-        INSERT INTO api_credentials (user_id, client_id, client_secret)
+        INSERT INTO api_credentials (user_id, client_id, client_secret_hash)
         VALUES (?, ?, ?)
-      `).run(userId, clientId, clientSecret);
+      `).run(userId, clientId, clientSecretHash); // 👈 Usa o HASH aqui
       
       console.log('✅ Credenciais salvas no banco');
     } catch (dbError) {
@@ -106,15 +110,15 @@ router.post('/generate', (req, res) => {
       console.log('✅ Log de auditoria criado');
     } catch (auditError) {
       console.error('⚠️ Erro ao criar log de auditoria (não crítico):', auditError);
-      // Não retorna erro, pois o audit log não é crítico
     }
 
     console.log('🎉 Credenciais geradas com sucesso!');
 
+    // RETORNA O CLIENT SECRET PURO APENAS NA GERAÇÃO
     res.json({
       success: true,
       clientId,
-      clientSecret,
+      clientSecret, // 👈 O Cliente vê a chave pura APENAS nesta resposta
       createdAt: new Date().toISOString()
     });
 
@@ -135,7 +139,7 @@ router.get('/', (req, res) => {
     const userId = req.user.userId;
 
     const credentials = db.prepare(`
-      SELECT client_id, client_secret, criado_em 
+      SELECT client_id, criado_em 
       FROM api_credentials 
       WHERE user_id = ?
     `).get(userId);
@@ -143,11 +147,12 @@ router.get('/', (req, res) => {
     if (!credentials) {
       return res.json({ hasCredentials: false });
     }
-
+    
+    // ⚠️ SEGURANÇA: NUNCA retorne o client_secret_hash nesta rota GET
     res.json({
       hasCredentials: true,
       clientId: credentials.client_id,
-      clientSecret: credentials.client_secret,
+      // clientSecret: '******', // Retorna apenas o ID
       createdAt: credentials.criado_em
     });
 
